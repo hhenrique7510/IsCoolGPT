@@ -55,57 +55,81 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Build Docker image
+      id: build-image
+      env:
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build Docker image (sempre funciona, mesmo sem AWS)
+        docker build -t ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
+        docker tag ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG ${{ env.ECR_REPOSITORY }}:latest
+        echo "✅ Docker image built successfully"
+        echo "image=${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+    
     - name: Configure AWS credentials
+      id: aws-credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+      continue-on-error: true
     
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
+      if: steps.aws-credentials.outcome == 'success'
+      continue-on-error: true
     
-    - name: Build, tag, and push image to Amazon ECR
-      id: build-image
+    - name: Push image to Amazon ECR
+      if: steps.login-ecr.outcome == 'success'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build Docker image
-        docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        
-        # Push to ECR
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        # Tag and push to ECR (só se credenciais AWS estiverem configuradas)
+        docker tag ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        docker tag ${{ env.ECR_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+        docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+        echo "✅ Image pushed to ECR"
+    
+    - name: AWS credentials not configured
+      if: steps.aws-credentials.outcome == 'failure'
+      run: |
+        echo "⚠️ AWS credentials not configured. Skipping ECR push."
+        echo "💡 To enable AWS deployment, configure GitHub Secrets:"
+        echo "   - AWS_ACCESS_KEY_ID"
+        echo "   - AWS_SECRET_ACCESS_KEY"
 
   deploy:
     name: Deploy to ECS
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
     - name: Configure AWS credentials
+      id: aws-credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+      continue-on-error: true
     
     - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
+      if: steps.aws-credentials.outcome == 'success'
+      continue-on-error: true
     
     - name: Deploy to Amazon ECS
       id: deploy-ecs
+      if: steps.login-ecr.outcome == 'success'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
@@ -116,4 +140,13 @@ jobs:
           --service ${{ env.ECS_SERVICE }} \
           --force-new-deployment \
           --region ${{ env.AWS_REGION }}
+        echo "✅ Service updated successfully"
+    
+    - name: AWS deployment skipped
+      if: steps.aws-credentials.outcome == 'failure'
+      run: |
+        echo "⚠️ AWS credentials not configured. Skipping ECS deployment."
+        echo "💡 To enable AWS deployment, configure GitHub Secrets:"
+        echo "   - AWS_ACCESS_KEY_ID"
+        echo "   - AWS_SECRET_ACCESS_KEY"
 
