@@ -1,0 +1,65 @@
+{
+  "family": "iscoolgpt",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "iscoolgpt",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/iscoolgpt:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "LLM_PROVIDER",
+          "value": "openai"
+        },
+        {
+          "name": "OPENAI_MODEL",
+          "value": "gpt-3.5-turbo"
+        },
+        {
+          "name": "MAX_TOKENS",
+          "value": "500"
+        },
+        {
+          "name": "TEMPERATURE",
+          "value": "0.7"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:iscoolgpt/openai-api-key"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/iscoolgpt",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "python -c \"import httpx; httpx.get('http://localhost:8000/health')\" || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
+
