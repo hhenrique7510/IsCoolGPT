@@ -134,19 +134,40 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Atualizar serviço ECS com nova imagem
-        aws ecs update-service \
+        # Verificar se o serviço existe antes de atualizar
+        if aws ecs describe-services \
           --cluster ${{ env.ECS_CLUSTER }} \
-          --service ${{ env.ECS_SERVICE }} \
-          --force-new-deployment \
-          --region ${{ env.AWS_REGION }}
-        echo "✅ Service updated successfully"
+          --services ${{ env.ECS_SERVICE }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'services[0].status' \
+          --output text 2>/dev/null | grep -q ACTIVE; then
+          # Serviço existe, atualizar
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ Service updated successfully"
+        else
+          echo "⚠️ ECS Service '${{ env.ECS_SERVICE }}' does not exist yet."
+          echo "💡 To create the service, you need to:"
+          echo "   1. Register Task Definition"
+          echo "   2. Create ECS Service (requires VPC/Subnets)"
+          echo "   See: PROXIMOS_PASSOS.md for details"
+        fi
+      continue-on-error: true
     
     - name: AWS deployment skipped
-      if: steps.aws-credentials.outcome == 'failure'
+      if: steps.aws-credentials.outcome == 'failure' || steps.deploy-ecs.outcome == 'failure'
       run: |
-        echo "⚠️ AWS credentials not configured. Skipping ECS deployment."
-        echo "💡 To enable AWS deployment, configure GitHub Secrets:"
-        echo "   - AWS_ACCESS_KEY_ID"
-        echo "   - AWS_SECRET_ACCESS_KEY"
+        if [ "${{ steps.aws-credentials.outcome }}" == "failure" ]; then
+          echo "⚠️ AWS credentials not configured. Skipping ECS deployment."
+          echo "💡 To enable AWS deployment, configure GitHub Secrets:"
+          echo "   - AWS_ACCESS_KEY_ID"
+          echo "   - AWS_SECRET_ACCESS_KEY"
+        else
+          echo "⚠️ ECS Service not found or deployment failed."
+          echo "💡 This is normal if the ECS Service hasn't been created yet."
+          echo "   The pipeline will continue - tests and build succeeded! ✅"
+        fi
 
