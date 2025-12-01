@@ -358,17 +358,29 @@ jobs:
               echo "staging_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
             else
               echo "⚠️ Could not get public IP, using secret or default"
-              STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+              if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+                STAGING_URL="${{ secrets.STAGING_API_URL }}"
+              else
+                STAGING_URL="http://staging-api.iscoolgpt.example.com"
+              fi
               echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
             fi
           else
             echo "⚠️ Could not get network interface, using secret or default"
-            STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+            if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+              STAGING_URL="${{ secrets.STAGING_API_URL }}"
+            else
+              STAGING_URL="http://staging-api.iscoolgpt.example.com"
+            fi
             echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
           fi
         else
           echo "⚠️ No running tasks found, using secret or default"
-          STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+          if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+            STAGING_URL="${{ secrets.STAGING_API_URL }}"
+          else
+            STAGING_URL="http://staging-api.iscoolgpt.example.com"
+          fi
           echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
         fi
       continue-on-error: true
@@ -376,7 +388,13 @@ jobs:
     - name: Wait for service to be ready
       run: |
         echo "⏳ Waiting for staging service to be ready..."
-        STAGING_URL="${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}"
+        if [ -z "$STAGING_URL" ]; then
+          if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+            STAGING_URL="${{ secrets.STAGING_API_URL }}"
+          else
+            STAGING_URL="http://staging-api.iscoolgpt.example.com"
+          fi
+        fi
         MAX_RETRIES=30
         RETRY_DELAY=10
         
@@ -396,21 +414,33 @@ jobs:
     - name: Run integration tests
       run: |
         echo "🧪 Running integration tests against staging..."
-        STAGING_URL="${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}"
+        if [ -z "$STAGING_URL" ]; then
+          if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+            STAGING_URL="${{ secrets.STAGING_API_URL }}"
+          else
+            STAGING_URL="http://staging-api.iscoolgpt.example.com"
+          fi
+        fi
         echo "Testing against: $STAGING_URL"
+        export STAGING_API_URL="$STAGING_URL"
         pytest tests/integration/ -v \
           --tb=short \
           -m "not slow" \
           --maxfail=3
       env:
-        STAGING_API_URL: ${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}
         LLM_PROVIDER: mock
       continue-on-error: true
     
     - name: Run smoke tests
       run: |
         echo "💨 Running smoke tests..."
-        STAGING_URL="${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}"
+        if [ -z "$STAGING_URL" ]; then
+          if [ -n "${{ secrets.STAGING_API_URL }}" ]; then
+            STAGING_URL="${{ secrets.STAGING_API_URL }}"
+          else
+            STAGING_URL="http://staging-api.iscoolgpt.example.com"
+          fi
+        fi
         echo "Testing against: $STAGING_URL"
         
         # Health check
@@ -563,7 +593,11 @@ jobs:
       if: steps.deploy-ecs.outcome == 'success'
       run: |
         echo "🔍 Verifying production health endpoint..."
-        PROD_URL="${{ secrets.PRODUCTION_API_URL || 'https://api.iscoolgpt.example.com' }}"
+        if [ -n "${{ secrets.PRODUCTION_API_URL }}" ]; then
+          PROD_URL="${{ secrets.PRODUCTION_API_URL }}"
+        else
+          PROD_URL="https://api.iscoolgpt.example.com"
+        fi
         
         # Aguardar um pouco para garantir que está pronto
         sleep 10
