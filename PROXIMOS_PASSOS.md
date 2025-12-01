@@ -208,18 +208,19 @@ docker-compose up --build
 - [x] Guia de início rápido
 - [x] Instruções do projeto
 
-### Deploy (Opcional)
-- [ ] ECR configurado
-- [ ] ECS configurado
-- [ ] API pública acessível
-- [ ] Logs funcionando
-- [ ] Monitoramento configurado
+### Deploy AWS ✅
+- [x] ECR configurado e funcionando
+- [x] ECS Cluster criado
+- [x] Pipeline integrado com AWS
+- [x] GitHub Secrets configurados
+- [ ] ECS Service criado (opcional - requer VPC)
+- [ ] API pública acessível (opcional)
 
 ### Evidências
-- [ ] Screenshots do pipeline
-- [ ] Screenshots da API funcionando
-- [ ] Screenshots do deploy AWS (se fizer)
-- [ ] Vídeo demonstrativo (opcional)
+- [x] Screenshots do pipeline (você já tem!)
+- [x] Screenshots da API funcionando
+- [x] Screenshots dos testes
+- [ ] Screenshots do deploy AWS completo (opcional)
 
 ---
 
@@ -268,9 +269,10 @@ docker-compose up --build
 **Projeto:** ✅ **100% Funcional Localmente**  
 **Testes:** ✅ **9/9 Passando**  
 **Documentação:** ✅ **Completa**  
-**Deploy AWS:** ⏳ **Pendente (opcional)**
+**Deploy AWS:** ✅ **ECR e ECS Configurados**  
+**CI/CD:** ✅ **Pipeline Funcionando**
 
-**Pronto para:** ✅ **Commit e Push** → ✅ **Entrega**
+**Pronto para:** ✅ **ENTREGA FINAL** 🎉
 
 ---
 
