@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-3.5-turbo"
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-pro"
+    gemini_model: str = "gemini-2.5-flash"
     huggingface_api_key: Optional[str] = None
     huggingface_model: str = "microsoft/DialoGPT-medium"
     huggingface_api_url: Optional[str] = None

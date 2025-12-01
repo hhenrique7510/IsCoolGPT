@@ -24,7 +24,7 @@
         },
         {
           "name": "GEMINI_MODEL",
-          "value": "gemini-pro"
+          "value": "gemini-2.5-flash"
         },
         {
           "name": "MAX_TOKENS",

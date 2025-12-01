@@ -80,11 +80,15 @@ class LLMService:
             raise ValueError("Gemini API key não configurada")
 
         try:
-            import google.generativeai as genai
+            from google import genai
             import asyncio
+            import os
 
-            genai.configure(api_key=self.gemini_api_key)
-            model = genai.GenerativeModel(settings.gemini_model)
+            # Configurar API key como variável de ambiente (nova API requer isso)
+            os.environ["GEMINI_API_KEY"] = self.gemini_api_key
+            
+            # Criar cliente (nova API)
+            client = genai.Client()
 
             # Construir prompt
             system_prompt = "Você é um assistente educacional inteligente chamado IsCoolGPT. Responda de forma clara, didática e objetiva, sempre focando em ajudar o aprendizado."
@@ -95,22 +99,16 @@ class LLMService:
             
             full_prompt = f"{system_prompt}\n\n{prompt}"
 
-            # Configurações de geração
-            generation_config = genai.types.GenerationConfig(
-                temperature=settings.temperature,
-            )
-            if max_tokens:
-                generation_config.max_output_tokens = max_tokens
-
-            # Gerar resposta (usar run_in_executor para tornar síncrono em async)
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(
-                    full_prompt,
-                    generation_config=generation_config
+            # Gerar resposta usando nova API
+            # Criar função helper para evitar problemas com lambda e closures
+            def generate_gemini_response():
+                return client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=full_prompt
                 )
-            )
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, generate_gemini_response)
 
             # Extrair resposta
             answer = response.text if hasattr(response, 'text') and response.text else str(response)
