@@ -70,7 +70,7 @@ Mesmo com créditos, você pode ter limites de rate (requisições por minuto):
 ```powershell
 # Testar se a chave funciona (pode retornar erro de quota)
 $headers = @{
-    "Authorization" = "Bearer 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"
+    "Authorization" = "Bearer YOUR_OPENAI_API_KEY_HERE"
     "Content-Type" = "application/json"
 }
 
