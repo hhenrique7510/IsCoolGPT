@@ -235,12 +235,55 @@ jobs:
         fi
       continue-on-error: true
     
-    - name: Get service URL
+    - name: Get service URL and IP
       id: service-url
       if: steps.deploy-ecs.outcome == 'success'
       run: |
-        # Tentar obter URL do serviço (se configurado com ALB)
-        echo "service_url=https://staging-api.iscoolgpt.example.com" >> $GITHUB_OUTPUT || true
+        echo "🔍 Discovering staging service IP..."
+        
+        # Aguardar task iniciar
+        sleep 30
+        
+        # Obter task rodando
+        TASK_ARN=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service-name ${{ env.ECS_SERVICE }} \
+          --desired-status RUNNING \
+          --region ${{ env.AWS_REGION }} \
+          --query 'taskArns[0]' \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -n "$TASK_ARN" ]; then
+          # Obter network interface ID
+          ENI_ID=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$ENI_ID" ]; then
+            # Obter IP público
+            PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+              --network-interface-ids "$ENI_ID" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'NetworkInterfaces[0].Association.PublicIp' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$PUBLIC_IP" ]; then
+              STAGING_URL="http://${PUBLIC_IP}:8000"
+              echo "✅ Found staging IP: $PUBLIC_IP"
+              echo "staging_url=$STAGING_URL" >> $GITHUB_OUTPUT
+              echo "staging_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ Could not get public IP"
+            fi
+          else
+            echo "⚠️ Could not get network interface"
+          fi
+        else
+          echo "⚠️ No running tasks found yet"
+        fi
       continue-on-error: true
 
   validate-staging:
@@ -264,16 +307,82 @@ jobs:
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
     
+    - name: Discover staging IP
+      id: discover-ip
+      run: |
+        echo "🔍 Discovering staging service IP..."
+        
+        # Obter task rodando
+        TASK_ARN=$(aws ecs list-tasks \
+          --cluster iscoolgpt-cluster-staging \
+          --service-name iscoolgpt-service-staging \
+          --desired-status RUNNING \
+          --region us-east-1 \
+          --query 'taskArns[0]' \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -z "$TASK_ARN" ]; then
+          echo "⚠️ No running tasks found, waiting..."
+          sleep 30
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster iscoolgpt-cluster-staging \
+            --service-name iscoolgpt-service-staging \
+            --desired-status RUNNING \
+            --region us-east-1 \
+            --query 'taskArns[0]' \
+            --output text 2>/dev/null || echo "")
+        fi
+        
+        if [ -n "$TASK_ARN" ]; then
+          # Obter network interface ID
+          ENI_ID=$(aws ecs describe-tasks \
+            --cluster iscoolgpt-cluster-staging \
+            --tasks "$TASK_ARN" \
+            --region us-east-1 \
+            --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$ENI_ID" ]; then
+            # Obter IP público
+            PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+              --network-interface-ids "$ENI_ID" \
+              --region us-east-1 \
+              --query 'NetworkInterfaces[0].Association.PublicIp' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$PUBLIC_IP" ]; then
+              STAGING_URL="http://${PUBLIC_IP}:8000"
+              echo "✅ Found staging IP: $PUBLIC_IP"
+              echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
+              echo "staging_url=$STAGING_URL" >> $GITHUB_OUTPUT
+              echo "staging_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ Could not get public IP, using secret or default"
+              STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+              echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
+            fi
+          else
+            echo "⚠️ Could not get network interface, using secret or default"
+            STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+            echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
+          fi
+        else
+          echo "⚠️ No running tasks found, using secret or default"
+          STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+          echo "STAGING_URL=$STAGING_URL" >> $GITHUB_ENV
+        fi
+      continue-on-error: true
+    
     - name: Wait for service to be ready
       run: |
         echo "⏳ Waiting for staging service to be ready..."
-        STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+        STAGING_URL="${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}"
         MAX_RETRIES=30
         RETRY_DELAY=10
         
         for i in $(seq 1 $MAX_RETRIES); do
           if curl -f -s "$STAGING_URL/health" > /dev/null 2>&1; then
-            echo "✅ Service is ready!"
+            echo "✅ Service is ready at $STAGING_URL!"
             exit 0
           fi
           echo "Attempt $i/$MAX_RETRIES: Service not ready yet, waiting ${RETRY_DELAY}s..."
@@ -287,33 +396,41 @@ jobs:
     - name: Run integration tests
       run: |
         echo "🧪 Running integration tests against staging..."
-        STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+        STAGING_URL="${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}"
+        echo "Testing against: $STAGING_URL"
         pytest tests/integration/ -v \
           --tb=short \
           -m "not slow" \
           --maxfail=3
       env:
-        STAGING_API_URL: ${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}
+        STAGING_API_URL: ${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}
         LLM_PROVIDER: mock
       continue-on-error: true
     
     - name: Run smoke tests
       run: |
         echo "💨 Running smoke tests..."
-        STAGING_URL="${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}"
+        STAGING_URL="${STAGING_URL:-${{ secrets.STAGING_API_URL || 'http://staging-api.iscoolgpt.example.com' }}}"
+        echo "Testing against: $STAGING_URL"
         
         # Health check
+        echo "Testing /health endpoint..."
         curl -f "$STAGING_URL/health" || exit 1
+        echo "✅ Health check passed"
         
         # Root endpoint
+        echo "Testing / endpoint..."
         curl -f "$STAGING_URL/" || exit 1
+        echo "✅ Root endpoint passed"
         
         # Test /ask endpoint (pode falhar se não tiver API key, mas deve retornar 422, não 500)
+        echo "Testing /api/v1/ask endpoint..."
         RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
           -X POST "$STAGING_URL/api/v1/ask" \
           -H "Content-Type: application/json" \
           -d '{"question":"test"}')
         
+        echo "Response code: $RESPONSE"
         if [ "$RESPONSE" -ge 500 ]; then
           echo "❌ Server error detected!"
           exit 1
