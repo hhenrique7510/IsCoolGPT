@@ -86,32 +86,31 @@ class LLMService:
 
             # Configurar API key como variável de ambiente (nova API requer isso)
             os.environ["GEMINI_API_KEY"] = self.gemini_api_key
-            
+
             # Criar cliente (nova API)
             client = genai.Client()
 
             # Construir prompt
             system_prompt = "Você é um assistente educacional inteligente chamado IsCoolGPT. Responda de forma clara, didática e objetiva, sempre focando em ajudar o aprendizado."
-            
+
             prompt = question
             if context:
                 prompt = f"Contexto: {context}\n\nPergunta: {question}"
-            
+
             full_prompt = f"{system_prompt}\n\n{prompt}"
 
             # Gerar resposta usando nova API
             # Criar função helper para evitar problemas com lambda e closures
             def generate_gemini_response():
                 return client.models.generate_content(
-                    model=settings.gemini_model,
-                    contents=full_prompt
+                    model=settings.gemini_model, contents=full_prompt
                 )
-            
+
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(None, generate_gemini_response)
 
             # Extrair resposta
-            answer = response.text if hasattr(response, 'text') and response.text else str(response)
+            answer = response.text if hasattr(response, "text") and response.text else str(response)
 
             # Estimar tokens (Gemini não retorna sempre)
             estimated_tokens = len(answer.split()) * 1.3
