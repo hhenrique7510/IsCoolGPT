@@ -8,9 +8,11 @@ class Settings(BaseSettings):
     api_version: str = "1.0.0"
 
     # LLM Provider Settings
-    llm_provider: str = "mock"  # openai, huggingface, or mock (para testes sem API key)
+    llm_provider: str = "mock"  # openai, huggingface, gemini, or mock (para testes sem API key)
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-3.5-turbo"
+    gemini_api_key: Optional[str] = None
+    gemini_model: str = "gemini-pro"
     huggingface_api_key: Optional[str] = None
     huggingface_model: str = "microsoft/DialoGPT-medium"
     huggingface_api_url: Optional[str] = None

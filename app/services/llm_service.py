@@ -9,6 +9,7 @@ class LLMService:
     def __init__(self):
         self.provider = settings.llm_provider
         self.openai_api_key = settings.openai_api_key
+        self.gemini_api_key = settings.gemini_api_key
         self.huggingface_api_key = settings.huggingface_api_key
         self.huggingface_api_url = (
             settings.huggingface_api_url or "https://api-inference.huggingface.co/models"
@@ -25,6 +26,8 @@ class LLMService:
         """
         if self.provider == "openai":
             return await self._generate_openai(question, context, max_tokens)
+        elif self.provider == "gemini":
+            return await self._generate_gemini(question, context, max_tokens)
         elif self.provider == "huggingface":
             return await self._generate_huggingface(question, context, max_tokens)
         elif self.provider == "mock":
@@ -68,6 +71,60 @@ class LLMService:
             }
         except Exception as e:
             raise Exception(f"Erro ao gerar resposta com OpenAI: {str(e)}")
+
+    async def _generate_gemini(
+        self, question: str, context: Optional[str] = None, max_tokens: Optional[int] = None
+    ) -> dict:
+        """Gera resposta usando Google Gemini API"""
+        if not self.gemini_api_key:
+            raise ValueError("Gemini API key não configurada")
+
+        try:
+            import google.generativeai as genai
+            import asyncio
+
+            genai.configure(api_key=self.gemini_api_key)
+            model = genai.GenerativeModel(settings.gemini_model)
+
+            # Construir prompt
+            system_prompt = "Você é um assistente educacional inteligente chamado IsCoolGPT. Responda de forma clara, didática e objetiva, sempre focando em ajudar o aprendizado."
+            
+            prompt = question
+            if context:
+                prompt = f"Contexto: {context}\n\nPergunta: {question}"
+            
+            full_prompt = f"{system_prompt}\n\n{prompt}"
+
+            # Configurações de geração
+            generation_config = genai.types.GenerationConfig(
+                temperature=settings.temperature,
+            )
+            if max_tokens:
+                generation_config.max_output_tokens = max_tokens
+
+            # Gerar resposta (usar run_in_executor para tornar síncrono em async)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: model.generate_content(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+            )
+
+            # Extrair resposta
+            answer = response.text if hasattr(response, 'text') and response.text else str(response)
+
+            # Estimar tokens (Gemini não retorna sempre)
+            estimated_tokens = len(answer.split()) * 1.3
+
+            return {
+                "answer": answer,
+                "tokens_used": int(estimated_tokens),
+                "model": settings.gemini_model,
+            }
+        except Exception as e:
+            raise Exception(f"Erro ao gerar resposta com Gemini: {str(e)}")
 
     async def _generate_huggingface(
         self, question: str, context: Optional[str] = None, max_tokens: Optional[int] = None
